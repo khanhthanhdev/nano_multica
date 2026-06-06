@@ -1,63 +1,31 @@
-# MicroMultica Skill Protocol for AI Coding Agents
+# Tool Skill: MicroMultica Orchestration Engine
 
-This document defines the interface and protocol instructions for AI coding agents to integrate with and consume the **MicroMultica** CLI state engine.
+## Context & Purpose
+You are an AI Coding Agent acting as a technical team member. You coexist on a codebase managed by `multica`, a headless CLI state-machine tracking issues, statuses, and agent assignments. You must interact with this system to claim, update, and track your work.
 
----
+## Installation Requirement
+Ensure the global binary `multica` is accessible in your environment. If missing, alert the user or run the install script.
 
-## 1. System Integration
+## CLI Command Reference
+Always parse system results via stdout JSON. Do not guess issue states.
 
-AI agents must invoke the compiled `multica` binary directly from the terminal without interactive inputs. The system persists state across separate runs in two local flat-file databases:
-- `multica_issues.dat` (issue properties & statuses)
-- `multica_agents.dat` (agent performance metrics & registries)
+| Command Syntax | Expected Use Case | Output Format |
+| :--- | :--- | :--- |
+| `multica --create-issue "<title>" "<desc>" "<tag>" [priority]` | Call this when you identify a new bug, refactor goal, or feature request. Priority is 1 (Critical) to 5 (Minimal). | JSON object containing `"status":"success"` |
+| `multica --poll-next` | Call this to advance the state machine. It handles transitions (`ENQUEUED` -> `CLAIMED` -> `RUNNING`). | JSON object detailing the `event` and `status` |
+| `multica --list-json` | Call this to read the current Kanban board layout before deciding your next move. | JSON array of all tracked issues |
+| `multica --list-agents` | Call this to list registered agents with performance statistics (Gemini-Advanced, Cursor-Composer, Claude-3.5). | JSON array of all registered agents |
+| `multica --assign-issue <id> <agent_name>` | Call this to manually override automatic allocation and assign an agent. | JSON object detailing the `event` and `status` |
+| `multica --update-status <id> <STATUS>` | Call this to manually force a state transition (e.g. `COMPLETED`, `BLOCKED`). | JSON object detailing the `event` and `status` |
 
----
+## Operational Lifecycle Workflow
+When assigned to a project repository containing `multica`, you must execute the following loop:
 
-## 2. Standardized Agent Execution Protocol
+1. **Read Board State:** Run `multica --list-json` to see outstanding work.
+2. **Process Tasks:** Look for issues where `"status": "RUNNING"` and `"assignee"` matches your current identity/profile.
+3. **Trigger Updates:** If an issue is stuck in `ENQUEUED` or `CLAIMED`, run `multica --poll-next` to step the engine forward until your task is marked `RUNNING`.
+4. **Handle Blockers:** If your code compilation fails or you encounter a fatal dependency ambiguity, intentionally append the string `"CRASH"` to your logging context or step metrics so the engine shifts the state to `BLOCKED`, alerting human maintainers.
 
-### Step 1: Query Current Tasks
-To discover active work items, invoke the list command:
-```bash
-./multica --list-json
-```
-**Expected Output:** A JSON array of issues:
-```json
-[
-  {"id":1,"title":"Fix Auth","tag":"auth","priority":"HIGH","priority_val":2,"status":"ENQUEUED","assignee":"none"}
-]
-```
-
-### Step 2: Push Lifecycle Steps (State transition)
-To execute the automated routing state machine:
-```bash
-./multica --poll-next
-```
-Each invocation performs exactly **one** state transition globally. Agents should poll sequentially until they reach a terminal status (`COMPLETED` or `BLOCKED`).
-
-#### State Transitions Map:
-1. **`ENQUEUED` $\rightarrow$ `CLAIMED`**: Assigns the highest scoring agent based on specialty match, historic success rate, and issue priority.
-2. **`CLAIMED` $\rightarrow$ `RUNNING`**: Marks the issue as active.
-3. **`RUNNING` $\rightarrow$ `COMPLETED` | `BLOCKED`**: Executes simulated logic. If description contains `"CRASH"`, it transitions to `BLOCKED`.
-
-### Step 3: Handle Exit Codes
-AI agents must check the command's exit code to ensure operational success:
-- **`0`**: Command completed successfully.
-- **`1`**: Validation error (invalid priority, missing arguments, or unknown statuses). Check `stderr`.
-- **`2`**: System-level failure or runtime error. Check `stderr`.
-
----
-
-## 3. Custom Mutations (Escalations and Manual Assignment)
-
-For custom tasks requiring manual intervention:
-
-### Assign an Agent manually:
-```bash
-./multica --assign-issue <id> <agent_name>
-```
-*Valid agent names:* `"Claude-3.5"`, `"Cursor-Composer"`, `"Gemini-Advanced"`.
-
-### Update Status manually:
-```bash
-./multica --update-status <id> <STATUS>
-```
-*Valid STATUS strings:* `ENQUEUED`, `CLAIMED`, `RUNNING`, `COMPLETED`, `BLOCKED`.
+## JSON Error Handling Boundaries
+* If the CLI returns Exit Code `1`, your input arguments are malformed or a parameter validation failed. Check your string quotes and flag format.
+* If the CLI returns Exit Code `2`, a structural workspace save/load data fault has occurred. Stop execution and notify the user.
