@@ -49,20 +49,25 @@ Our design adopts a clean, modular object structure. Below is the UML class diag
 
 ```mermaid
 classDiagram
-    class main {
-        +int argc
-        +char* argv[]
+    class Workspace {
+        <<Abstract>>
+        +load(vector~Issue~&, unordered_map~string, Agent~&) const*
+        +save(vector~Issue~&, unordered_map~string, Agent~&) const*
+        +loadIssues(vector~Issue~&) const*
+        +loadAgentStats(unordered_map~string, Agent~&) const*
+        +saveIssues(vector~Issue~&) const*
+        +saveAgentStats(unordered_map~string, Agent~&) const*
     }
     
     class MulticaWorkspace {
         -std::string issuesFile
         -std::string agentsFile
-        +load(vector~Issue~&, unordered_map~string, shared_ptr~Agent~~&) const
-        +save(vector~Issue~&, unordered_map~string, shared_ptr~Agent~~&) const
-        -loadIssues(vector~Issue~&) const
-        -loadAgentStats(unordered_map~string, shared_ptr~Agent~~&) const
-        -saveIssues(vector~Issue~&) const
-        -saveAgentStats(unordered_map~string, shared_ptr~Agent~~&) const
+        +load(vector~Issue~&, unordered_map~string, Agent~&) const
+        +save(vector~Issue~&, unordered_map~string, Agent~&) const
+        +loadIssues(vector~Issue~&) const
+        +loadAgentStats(unordered_map~string, Agent~&) const
+        +saveIssues(vector~Issue~&) const
+        +saveAgentStats(unordered_map~string, Agent~&) const
     }
     
     class Issue {
@@ -86,39 +91,25 @@ classDiagram
     }
     
     class Agent {
-        <<Abstract>>
-        #std::string name
-        #std::string specialtyTag
-        #int successCount
-        #int totalCount
+        -std::string name
+        -std::string specialtyTag
+        -int successCount
+        -int totalCount
         +getName() string
         +getSpecialty() string
         +getSuccessCount() int
         +getTotalCount() int
         +getSuccessRate() double
         +recordResult(bool success)
-        +computeScore(Issue) double*
-        +executeTask(Issue) bool*
-    }
-    
-    class ClaudeAgent {
-        +executeTask(Issue) bool
-    }
-    
-    class CursorAgent {
-        +executeTask(Issue) bool
-    }
-    
-    class GeminiAgent {
         +computeScore(Issue) double
         +executeTask(Issue) bool
     }
     
     class IssueBoard {
         -std::vector~Issue~ issues
-        -std::unordered_map~std::string, std::shared_ptr~Agent~~ agentRegistry
-        -MulticaWorkspace workspace
-        +registerAgent(shared_ptr~Agent~)
+        -std::unordered_map~std::string, Agent~ agentRegistry
+        -std::shared_ptr~Workspace~ workspace
+        +registerAgent(Agent)
         +addIssue(string, string, string, int)
         +assignIssue(int, string)
         +updateIssueStatus(int, string)
@@ -126,7 +117,7 @@ classDiagram
         +printBoardJSON() const
         +printAgentsJSON() const
         -findIssueById(int) Issue*
-        -findBestAgent(Issue) shared_ptr~Agent~
+        -findBestAgent(Issue) const Agent*
         -emitStateChange(int, string, string)
     }
     
@@ -139,17 +130,14 @@ classDiagram
     }
     
     %% Relationships
-    main ..> MulticaWorkspace : Instantiates
+    main ..> Workspace : Instantiates (as MulticaWorkspace)
     main ..> IssueBoard : Instantiates
     main ..> CommandRouter : Instantiates & routes
     
-    IssueBoard *-- MulticaWorkspace : Composition (owns)
+    IssueBoard o-- Workspace : Aggregation (holds std::shared_ptr)
+    Workspace <|-- MulticaWorkspace : Inheritance (Polymorphism)
     IssueBoard *-- Issue : Composition (contains list of)
-    IssueBoard *-- Agent : Aggregation (holds registry of std::shared_ptr)
-    
-    Agent <|-- ClaudeAgent : Inheritance
-    Agent <|-- CursorAgent : Inheritance
-    Agent <|-- GeminiAgent : Inheritance
+    IssueBoard *-- Agent : Composition (holds registry of Agent values)
     
     CommandRouter ..> IssueBoard : Directs mutations on
 ```
@@ -170,10 +158,10 @@ FUNCTION main(argc, argv)
         Initialize MulticaWorkspace with paths ("multica_issues.dat", "multica_agents.dat")
         Initialize IssueBoard board with workspace
         
-        // Dynamically instantiate polymorphic agents
-        Register ClaudeAgent("Claude-3.5", "auth")
-        Register CursorAgent("Cursor-Composer", "database")
-        Register GeminiAgent("Gemini-Advanced", "frontend")
+        // Dynamically instantiate concrete agents
+        Register Agent("Claude-3.5", "auth")
+        Register Agent("Cursor-Composer", "database")
+        Register Agent("Gemini-Advanced", "frontend")
         
         Load historic agent stats from workspace agent file
         
@@ -207,26 +195,22 @@ FUNCTION IssueBoard::findBestAgent(issue)
     bestAgent = nullptr
     bestScore = -1.0
 
-    FOR EACH (agentName, agentPtr) IN agentRegistry DO
-        IF agentPtr is null THEN
-            CONTINUE
-        END IF
-        
+    FOR EACH (agentName, agentVal) IN agentRegistry DO
         // Calculate affinity & metrics score
         score = 0.0
-        IF agentPtr.specialtyTag == issue.tag THEN
+        IF agentVal.specialtyTag == issue.tag THEN
             score = score + 10.0 // Specialty match bonus
         END IF
         
         // Add performance factor (between 0.0 and 5.0)
-        score = score + (agentPtr.getSuccessRate() * 5.0)
+        score = score + (agentVal.getSuccessRate() * 5.0)
         
         // Add priority urgency weight (converts 1..5 priority to 5..1 added weight)
         score = score + (6.0 - issue.priority)
         
         IF score > bestScore THEN
             bestScore = score
-            bestAgent = agentPtr
+            bestAgent = &agentVal
         END IF
     END FOR
 
@@ -266,17 +250,17 @@ FUNCTION IssueBoard::processNextLifecycleStep()
             
         // Transition 3: RUNNING -> COMPLETED or BLOCKED
         ELSE IF issue.status == RUNNING THEN
-            agentPtr = agentRegistry.find(issue.assignee)
-            IF agentPtr not found OR agentPtr is null THEN
+            agentIt = agentRegistry.find(issue.assignee)
+            IF agentIt not found THEN
                 issue.status = BLOCKED
                 EmitJSONStateChangeEvent(issue.id, BLOCKED)
                 processedAny = true
                 BREAK
             END IF
             
-            // Runtime Polymorphism: execute concrete agent logic
-            success = agentPtr.executeTask(issue)
-            agentPtr.recordResult(success) // Update success stats
+            // Execute concrete agent logic
+            success = agentIt.second.executeTask(issue)
+            agentIt.second.recordResult(success) // Update success stats
             
             IF success THEN
                 issue.status = COMPLETED
@@ -304,73 +288,47 @@ Here are the key C++ snippets illustrating core object-oriented programming, sma
 
 ### A. Object-Oriented Programming (OOP) & Polymorphism
 
-The system uses an abstract base class `Agent` representing a worker interface, and concrete classes `ClaudeAgent`, `CursorAgent`, and `GeminiAgent` implementing custom behavioral validation.
+The system satisfies OOP requirements by declaring an abstract base class `Workspace` representing the persistence interface, and a concrete subclass `MulticaWorkspace` that overrides load/save methods. The `IssueBoard` handles the workspace polymorphically through a base pointer interface.
 
-*From [Agent.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L17-L73):*
+*From [MulticaWorkspace.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/MulticaWorkspace.hpp):*
 
 ```cpp
-class Agent {
-protected:
-    std::string name;
-    std::string specialtyTag;
-    int successCount;
-    int totalCount;
-
+class Workspace {
 public:
-    Agent(std::string n, std::string tag, int successes = 0, int total = 0)
-        : name(std::move(n)), specialtyTag(std::move(tag)),
-          successCount(successes), totalCount(total) {}
-
-    virtual ~Agent() = default;
-
-    // Pure virtual method forcing concrete subclasses to override behavior
-    virtual bool executeTask(const Issue& issue) = 0;
-    
-    // Virtual score calculation supporting customization (overriding)
-    virtual double computeScore(const Issue& issue) const {
-        double score = 0.0;
-        if (specialtyTag == issue.getTag()) score += 10.0;
-        score += getSuccessRate() * 5.0;
-        score += static_cast<double>(6 - issue.getPriority());
-        return score;
-    }
+    virtual ~Workspace() = default;
+    virtual void loadIssues(std::vector<Issue>& issues) const = 0;
+    virtual void loadAgentStats(std::unordered_map<std::string, Agent>& registry) const = 0;
+    virtual void saveIssues(const std::vector<Issue>& issues) const = 0;
+    virtual void saveAgentStats(const std::unordered_map<std::string, Agent>& registry) const = 0;
+    virtual void load(std::vector<Issue>& issues, std::unordered_map<std::string, Agent>& registry) const = 0;
+    virtual void save(const std::vector<Issue>& issues, const std::unordered_map<std::string, Agent>& registry) const = 0;
 };
 ```
 
-Subclasses implement custom rules. For example, `ClaudeAgent` fails if the word `CRASH` is in the description:
-
-*From [Agent.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L81-L93):*
+*From [MulticaWorkspace.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/MulticaWorkspace.hpp):*
 
 ```cpp
-class ClaudeAgent : public Agent {
+class MulticaWorkspace : public Workspace {
 public:
-    using Agent::Agent;
-
-    bool executeTask(const Issue& issue) override {
-        // Simulates custom engine behavior
-        if (issue.getDescription().find("CRASH") != std::string::npos) {
-            return false; // Triggers BLOCKED status
-        }
-        return true;
-    }
+    void loadIssues(std::vector<Issue>& issues) const override;
+    void loadAgentStats(std::unordered_map<std::string, Agent>& registry) const override;
+    void saveIssues(const std::vector<Issue>& issues) const override;
+    void saveAgentStats(const std::unordered_map<std::string, Agent>& registry) const override;
 };
 ```
 
 ### B. Dynamic Memory Management & Smart Pointers
 
-Memory leaks are prevented by holding agents in an `unordered_map` of `std::shared_ptr<Agent>`. Instantiation is completed cleanly with `std::make_shared`.
+Memory leaks are prevented by holding the injected persistence workspace inside a `std::shared_ptr<Workspace>`. The workspace is dynamically instantiated and injected at runtime in `main.cpp`.
 
-*From [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L31-L41):*
+*From [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp):*
 
 ```cpp
-// Dynamically allocate polymorphic agents via memory-safe shared_ptr
-auto claudeAgent = std::make_shared<ClaudeAgent>("Claude-3.5",     "auth");
-auto cursorAgent = std::make_shared<CursorAgent>("Cursor-Composer", "database");
-auto geminiAgent = std::make_shared<GeminiAgent>("Gemini-Advanced", "frontend");
+// Instantiated polymorphically via make_shared and injected
+std::shared_ptr<Workspace> workspace = std::make_shared<MulticaWorkspace>("multica_issues.dat", "multica_agents.dat");
 
-board.registerAgent(claudeAgent);
-board.registerAgent(cursorAgent);
-board.registerAgent(geminiAgent);
+// Inject dependency into board
+IssueBoard board(workspace);
 ```
 
 ### C. File I/O and State Persistence
@@ -428,7 +386,7 @@ This section explicitly maps the technical requirements of the assignment to the
 | Requirement Category | Specific Implementation Detail | Target Code Reference |
 | :--- | :--- | :--- |
 | **1. Group Code Volume** | Safe conversion of C-style arguments, exception traps, deterministic assignment scoring formulas, and disk database deserialization. | • [CommandRouter.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/CommandRouter.cpp) (~150 lines)<br>• [IssueBoard.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp) (~250 lines)<br>• [MulticaWorkspace.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp) (~150 lines)<br>• [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp) (~80 lines) |
-| **2. OOP Principles** | • Abstract Base Class definition with virtual destructor and pure virtual methods.<br>• Subclass inheritance (`ClaudeAgent`, `CursorAgent`, `GeminiAgent`).<br>• Dynamic runtime polymorphism via base pointer. | • [Agent.hpp:L17-L73](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L17-L73) (Abstract class)<br>• [Agent.hpp:L81-L139](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L81-L139) (Subclass declarations)<br>• [IssueBoard.cpp:L186-L196](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp#L186-L196) (Polymorphic call context) |
-| **3. Smart Memory Management** | Allocation of dynamic agent workers via `std::make_shared`, registered in memory containers using `std::shared_ptr` to avoid raw heap errors. | • [main.cpp:L35-L41](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L35-L41) (`std::make_shared` context)<br>• [IssueBoard.hpp:L29](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L29) (`std::shared_ptr` mapping storage) |
-| **4. Advanced Structures & STL** | • Fast hash maps (`std::unordered_map`) for agent registry retrieval.<br>• Dynamically sized vectors (`std::vector`) for issues and arguments. | • [IssueBoard.hpp:L28-L29](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L28-L29) (`std::vector` and `std::unordered_map` declaration)<br>• [CommandRouter.hpp:L26](file:///home/thanhkt/code/vinuni/nano_multica/include/CommandRouter.hpp#L26) (`std::vector` for string routing) |
+| **2. OOP Principles** | • Abstract Base Class definition (`Workspace`) with virtual destructor and pure virtual methods.<br>• Subclass inheritance (`MulticaWorkspace` inherits from `Workspace`).<br>• Dynamic runtime polymorphism via interface base pointer. | • [MulticaWorkspace.hpp:L17-L29](file:///home/thanhkt/code/vinuni/nano_multica/include/MulticaWorkspace.hpp#L17-L29) (Abstract `Workspace` interface)<br>• [MulticaWorkspace.hpp:L34-L52](file:///home/thanhkt/code/vinuni/nano_multica/include/MulticaWorkspace.hpp#L34-L52) (Subclass declarations)<br>• [IssueBoard.cpp:L14-L24](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp#L14-L24) (Polymorphic load/save context) |
+| **3. Smart Memory Management** | Allocation of dynamic Workspace driver via `std::make_shared` and dependency injection using `std::shared_ptr` to avoid raw heap errors. | • [main.cpp:L21-L28](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L21-L28) (`std::make_shared` context)<br>• [IssueBoard.hpp:L23](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L23) (`std::shared_ptr` interface mapping) |
+| **4. Advanced Structures & STL** | • Fast hash maps (`std::unordered_map`) for agent registry retrieval by value.<br>• Dynamically sized vectors (`std::vector`) for issues and arguments. | • [IssueBoard.hpp:L21-L22](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L21-L22) (`std::vector` and `std::unordered_map` declaration)<br>• [CommandRouter.hpp:L26](file:///home/thanhkt/code/vinuni/nano_multica/include/CommandRouter.hpp#L26) (`std::vector` for string routing) |
 | **5. File I/O & Exception Handling** | • Input/output filestream readers and writer trunks (`std::ifstream`, `std::ofstream`).<br>• Try-Catch exception handlers in central entry point with exit signaling. | • [MulticaWorkspace.cpp:L17-L54](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp#L17-L54) (File reading)<br>• [MulticaWorkspace.cpp:L95-L113](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp#L95-L113) (File writing)<br>• [main.cpp:L20-L79](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L20-L79) (General try-catch boundary) |

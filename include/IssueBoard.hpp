@@ -3,93 +3,60 @@
 
 #include <vector>
 #include <unordered_map>
-#include <memory>
+#include <optional>
 #include <string>
+#include <memory>
 #include "Issue.hpp"
 #include "Agent.hpp"
 #include "MulticaWorkspace.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IssueBoard — Core State-Machine Orchestration Engine
+// IssueBoard — Orchestration Layer
 //
-// Acts as the central worker class of MicroMultica. It owns the issue
-// collection, the agent registry, and all lifecycle mutation logic.
-//
-// Responsibilities:
-//   • Maintain the ordered list of Issues with unique integer IDs
-//   • Register and index polymorphic Agent instances by name
-//   • Route issues through the ENQUEUED → CLAIMED → RUNNING → COMPLETED/BLOCKED
-//     state machine using score-compounding deterministic assignment
-//   • Emit structured JSON to stdout and errors to stderr
-//   • Delegate all disk I/O to the injected MulticaWorkspace instance
+// Manages issue lifecycles and agent allocations. Uses Dependency Injection (DI)
+// to receive its Workspace component, keeping storage decoupled.
 // ─────────────────────────────────────────────────────────────────────────────
 class IssueBoard {
 private:
-    std::vector<Issue>                                    issues;
-    std::unordered_map<std::string, std::shared_ptr<Agent>> agentRegistry;
-    MulticaWorkspace                                      workspace;
+    std::vector<Issue>                     issues;
+    std::unordered_map<std::string, Agent> agentRegistry; // Stored by value
+    std::shared_ptr<Workspace>             workspace;     // Injected interface
 
     // ── Internal helpers ───────────────────────────────────────────────────
-
-    // Find an issue by ID; returns nullptr if not found.
     Issue* findIssueById(int id);
     const Issue* findIssueById(int id) const;
 
-    // Score-compounding agent selection algorithm.
-    // Iterates agentRegistry, calls agent->computeScore(issue), and returns
-    // the shared_ptr with the highest score. Returns nullptr if registry is empty.
-    std::shared_ptr<Agent> findBestAgent(const Issue& issue) const;
+    // Returns a pointer to the best-scoring agent, or nullptr if none registered.
+    const Agent* findBestAgent(const Issue& issue) const;
 
-    // Emit a JSON state-change event line to stdout.
     void emitStateChange(int issueId,
                          const std::string& newStatus,
                          const std::string& agent = "") const;
 
 public:
-    // Construct the board with a workspace instance (default paths apply).
-    explicit IssueBoard(MulticaWorkspace ws = MulticaWorkspace{});
+    // Inject the Workspace dependency via the constructor
+    explicit IssueBoard(std::shared_ptr<Workspace> ws = nullptr);
 
-    // On destruction, persist current state to disk automatically.
+    // RAII destructor: saves state via the injected workspace
     ~IssueBoard();
 
     // ── Agent Registry ─────────────────────────────────────────────────────
-
-    // Register a polymorphic agent; silently ignores nullptr.
-    void registerAgent(std::shared_ptr<Agent> agent);
+    void registerAgent(Agent agent);
 
     // ── Issue Management ───────────────────────────────────────────────────
-
-    // Create and append a new Issue. Validates that no field is empty and
-    // priority is within [1, 5]. Emits JSON success or throws on validation fail.
     void addIssue(const std::string& title,
                   const std::string& desc,
                   const std::string& tag,
                   int priority = PRIORITY_MEDIUM);
 
-    // Manually assign an issue to a named agent (must already be registered).
-    // Transitions the issue to CLAIMED status.
     void assignIssue(int id, const std::string& agentName);
-
-    // Force-update an issue's status from a string token (e.g. "COMPLETED").
-    // Valid tokens: ENQUEUED, CLAIMED, RUNNING, COMPLETED, BLOCKED.
     void updateIssueStatus(int id, const std::string& statusStr);
 
     // ── State-Machine Lifecycle ────────────────────────────────────────────
-
-    // Advance one issue by exactly one lifecycle step:
-    //   ENQUEUED  → CLAIMED  (score-compounding assignment)
-    //   CLAIMED   → RUNNING  (prepare for execution)
-    //   RUNNING   → COMPLETED or BLOCKED (polymorphic executeTask())
-    // Records agent performance stats on RUNNING→terminal transitions.
-    // Emits an idle JSON message if no issue required a transition.
     void processNextLifecycleStep();
 
     // ── JSON Output ────────────────────────────────────────────────────────
-
-    // Print all issues as a JSON array to stdout.
     void printBoardJSON() const;
-
-    // Print all registered agents with their stats as a JSON array to stdout.
     void printAgentsJSON() const;
 };
 

@@ -1,289 +1,258 @@
-To make this a CLI that an AI Coding Agent (like a Cursor Agent, Claude Engineer, or a custom Python script) can **call directly**, the program must shift from an *interactive* menu loop to a **headless, command-driven architecture**.
+# Product Requirements Document (PRD) — Simple Task Manager CLI (MicroMultica)
 
-Instead of waiting for human keystrokes, the agent invokes your compiled binary directly via terminal commands with explicit flags (e.g., `./multica --create-issue "Fix Auth"` or `./multica --poll-next`). The program processes the command, updates the state files, prints structured logs or JSON to `stdout`, and exits immediately with an appropriate status code.
+## 1. Project Overview & Scope
+**MicroMultica** is a headless, command-driven command-line interface (CLI) designed to serve as the execution and state-tracking layer for external AI coding agents. The system allows an agent to register itself, retrieve issues from a backlog, assign issues dynamically based on specialty matching and historic performance, simulate tasks, and log performance counters.
 
-Here is the updated PRD adjusted for an **Agent-Executable CLI Engine**.
-
----
-
-# Product Requirements Document (PRD)
-
-## Project Title: MicroMultica: An Agent-Callable CLI Orchestration Engine
+The software is structured as a non-interactive console application. It loads state from disk, executes a single state-machine transition or query per invocation, outputs formatted JSON, and terminates with standard Unix exit codes. This allows for automated parsing and scripting.
 
 ---
 
 ## 2. Project Description and Architecture
 
-### Description
+### 2.1 Description
+MicroMultica acts as an issue tracker and orchestrator specifically tailored for AI agents. By executing command flags, external workflows can create issues, query the status of the board, list agents, or trigger lifecycle mutations. The CLI provides a deterministic framework to assess which agent is best suited for a task, runs the task simulation (which can succeed or fail depending on agent capability and task descriptions), and saves all changes back to a persistent flat-file database.
 
-**MicroMultica** is a headless, non-interactive command-line tool built to serve as the local execution and state tracking layer for autonomous AI Coding Agents. Rather than relying on a human-facing UI, this CLI is designed to be executed directly by scripts or parent agent loops using standardized command line arguments (flags).
+### 2.2 Core Algorithms
 
-When an agent invokes the CLI to create an issue, claim a task, or update execution metrics, MicroMultica parses the command line parameters, loads the system state from local disk storage, performs the requested mutation, prints structured progress logs or raw JSON metadata to standard output (`stdout`), and returns a clean exit code (`0` for success, non-zero for failure).
+#### 2.2.1 State-Machine Lifecycle Transition
+The project centers on a finite state machine managing task execution. Issues progress through a linear sequence:
+$$\text{ENQUEUED} \longrightarrow \text{CLAIMED} \longrightarrow \text{RUNNING} \longrightarrow \text{COMPLETED} \text{ or } \text{BLOCKED}$$
 
-### Algorithm
-
-The core engine executes commands using two foundational backend processes:
-
-1. **Command Routing and Flag Parsing:** The system translates `argv` inputs into specific execution contexts using an deterministic routing algorithm. It strictly validates flags, ensuring optional arguments match requirement criteria (e.g., preventing a task update if a non-existent status flag is passed) before initializing state mutations.
-2. **Deterministic Agent Allocation & Score Compounding:** When a command requests an automatic allocation for an issue, the engine calculates a structural score for each registered agent based on their active capability array and historic task success rates. The agent with the highest compound score is automatically assigned, and the issue state transitions without human intervention.
-
-### Architecture & Component Structure
-
-The system uses clear multi-file modularization, abandoning interactive UI controllers in favor of strict command routers and file-persisted databases.
+- **ENQUEUED $\rightarrow$ CLAIMED**: Triggered when the CLI polls for work. The system determines the optimal registered agent for the task using the *Score Compounding Algorithm*. The chosen agent is assigned to the issue, and the status changes to `CLAIMED`.
+- **CLAIMED $\rightarrow$ RUNNING**: Indicates that execution has started.
+- **RUNNING $\rightarrow$ COMPLETED / BLOCKED**: The assigned agent attempts to execute the task. Based on the agent's rules and task parameters, the run either succeeds (status: `COMPLETED`) or fails/blocks (status: `BLOCKED`). The agent's historical success counters are updated accordingly.
 
 ```
-                      ┌───────────────────────┐
-                      │         main          │ (Parses argv flags)
-                      └───────────┬───────────┘
-                                  │ Calls
-                                  ▼
-                      ┌───────────────────────┐
-                      │     CommandRouter     │ (Validates & Routes Actions)
-                      └───────────┬───────────┘
-                                  │ Invokes
-                                  ▼
-                      ┌───────────────────────┐
-                      │     IssueBoard        │ (State Mutator Engine)
-                      └─────┬───────────┬─────┘
-                            │           │
-            Modifies Status │           │ References Profiles
-                            ▼           ▼
-                      ┌───────────┐┌───────────┐
-                      │   Issue   ││   Agent   │ (Base Class)
-                      └───────────┘└───────────┘
-
+       +--------------+
+       |   ENQUEUED   |
+       +-------+------+
+               |
+               | (Score-based Allocation)
+               v
+       +--------------+
+       |   CLAIMED    |
+       +-------+------+
+               |
+               | (Start Execution)
+               v
+       +--------------+
+       |   RUNNING    |
+       +---+------+---+
+           |      |
+           |      +------------------+
+           | (Success)               | (Failure / CRASH)
+           v                         v
+     +-----+--------+          +-----+--------+
+     |  COMPLETED   |          |   BLOCKED    |
+     +--------------+          +--------------+
 ```
 
-#### Class Definitions
+#### 2.2.2 Deterministic Agent Allocation (Score Compounding)
+When an issue is in the `ENQUEUED` state, it is assigned to the agent that achieves the highest affinity score. The score is calculated using three compounded factors:
+1. **Specialty Match Bonus**: A $+10.0$ bonus is added if the agent's specialty tag matching the issue's domain tag (e.g., `auth`, `database`, `frontend`).
+2. **Performance History**: A weight between $0.0$ and $5.0$, computed as:
+   $$\text{Success Rate Score} = \text{Success Rate} \times 5.0$$
+   where $\text{Success Rate} = \frac{\text{Success Count}}{\text{Total Count}}$ (defaults to $1.0$ if the agent has no history).
+3. **Priority Urgency Weight**: More urgent issues escalate matching scores to route them to the best-performing agents:
+   $$\text{Priority Weight} = 6.0 - \text{Priority}$$
+   (where Priority is 1 for Critical and 5 for Minimal).
 
-* `Issue` (Class): Holds parameters for individual tasks (ID, Title, Status, Assignee, Priority Rating).
-* `Agent` (Abstract Base Class / Derived Classes): Represents agent profiles. Defines how specific tool structures format outputs or handle execution simulated token limits.
-* `IssueBoard` (Engine Class): Contains the collection of issues and agent registries. It is the core worker class that contains logic to add links, filter states, and run state transitions.
-* `CommandRouter` (Controller Class): Contains the flag parsing maps. It takes `argc` and `argv`, maps inputs to internal methods, handles input exceptions, and routes payloads to the `IssueBoard`.
-* `MulticaWorkspace` (Persistence Class): Reads/writes the board configuration directly to disk (`workspace.dat` or `issues.json`) before and after every execution slice.
+$$\text{Final Score} = \text{Specialty Match Bonus} + (\text{Success Rate} \times 5.0) + (6.0 - \text{Priority})$$
 
-### Expected Output
+### 2.3 Architecture & Class Diagram
+The software is designed using standard object-oriented patterns in C++.
 
-Because this is built for automated agents to call directly, all outputs must be highly predictable:
+```mermaid
+classDiagram
+    class main {
+        +int argc
+        +char* argv[]
+    }
+    
+    class Workspace {
+        <<Abstract>>
+        +load(vector~Issue~&, unordered_map~string, Agent~&) const*
+        +save(vector~Issue~&, unordered_map~string, Agent~&) const*
+        +loadIssues(vector~Issue~&) const*
+        +loadAgentStats(unordered_map~string, Agent~&) const*
+        +saveIssues(vector~Issue~&) const*
+        +saveAgentStats(unordered_map~string, Agent~&) const*
+    }
+    
+    class MulticaWorkspace {
+        -std::string issuesFile
+        -std::string agentsFile
+        +load(vector~Issue~&, unordered_map~string, Agent~&) const
+        +save(vector~Issue~&, unordered_map~string, Agent~&) const
+        +loadIssues(vector~Issue~&) const
+        +loadAgentStats(unordered_map~string, Agent~&) const
+        +saveIssues(vector~Issue~&) const
+        +saveAgentStats(unordered_map~string, Agent~&) const
+    }
+    
+    class Issue {
+        -int id
+        -std::string title
+        -std::string description
+        -std::string tag
+        -IssueStatus status
+        -std::string assignee
+        -int priority
+        +getId() int
+        +getTitle() string
+        +getDescription() string
+        +getTag() string
+        +getStatus() IssueStatus
+        +getAssignee() string
+        +getPriority() int
+        +setStatus(IssueStatus)
+        +setAssignee(string)
+        +setPriority(int)
+    }
+    
+    class Agent {
+        -std::string name
+        -std::string specialtyTag
+        -int successCount
+        -int totalCount
+        +getName() string
+        +getSpecialty() string
+        +getSuccessCount() int
+        +getTotalCount() int
+        +getSuccessRate() double
+        +recordResult(bool success)
+        +computeScore(Issue) double
+        +executeTask(Issue) bool
+    }
+    
+    class IssueBoard {
+        -std::vector~Issue~ issues
+        -std::unordered_map~std::string, Agent~ agentRegistry
+        -std::shared_ptr~Workspace~ workspace
+        +registerAgent(Agent)
+        +addIssue(string, string, string, int)
+        +assignIssue(int, string)
+        +updateIssueStatus(int, string)
+        +processNextLifecycleStep()
+        +printBoardJSON() const
+        +printAgentsJSON() const
+        -findIssueById(int) Issue*
+        -findBestAgent(Issue) const Agent*
+        -emitStateChange(int, string, string)
+    }
+    
+    class CommandRouter {
+        -std::vector~std::string~ args
+        +route(IssueBoard&) const
+        +printHelp()$
+        -requireArg(size_t, string) const
+        -parseIntArg(string, string)$
+    }
+    
+    %% Relationships
+    main ..> Workspace : Instantiates (as MulticaWorkspace)
+    main ..> IssueBoard : Instantiates
+    main ..> CommandRouter : Instantiates & routes
+    
+    IssueBoard o-- Workspace : Aggregation (holds std::shared_ptr)
+    Workspace <|-- MulticaWorkspace : Inheritance (Polymorphism)
+    IssueBoard *-- Issue : Composition (contains list of)
+    IssueBoard *-- Agent : Composition (holds registry of Agent values)
+    
+    CommandRouter ..> IssueBoard : Directs mutations on
+```
 
-* **JSON Structured Outputs:** When queried with flags like `./multica --list-json`, the output must be parseable JSON string arrays so the calling agent can read them programmatically.
-* **Standard Error Logging (`stderr`):** System bugs, missing files, or validation blockages must be routed to `std::cerr` rather than `std::cout`, separating errors from expected operational data.
-* **Standardized Exit Codes:** Returns `0` for perfect command completion, `1` for invalid argument configurations, and `2` if an agent-blocking logic exception occurs.
+- **`Issue`**: Encapsulates a single work item, maintaining identification, description, status, current assignee, and priority.
+- **`Agent`**: A concrete class representing a standard user/agent profile containing name, specialty tag, and historic success metrics. Task execution validation is dynamically routed based on specialty tags.
+- **`Workspace`**: An abstract interface defining the contracts for loading/saving backlogs and agent profiles.
+- **`MulticaWorkspace`**: A concrete workspace subclass implementing flat-file (pipe-delimited) load and save functionality.
+- **`IssueBoard`**: The orchestrator representing the backlog and registry. It accepts a `std::shared_ptr<Workspace>` via dependency injection.
+- **`CommandRouter`**: Parses command-line parameters, validates options, and routes calls to relevant methods on the board.
+
+### 2.4 Expected Output
+1. **Successful Execution**: Output formatted JSON containing the transition state changes or query details, terminating with exit code `0`.
+2. **Validation/Arguments Error**: Output a structured error JSON detailing missing parameters or malformed inputs on `stderr`, terminating with exit code `1`.
+3. **Runtime/System Error**: Output system failure information (such as file I/O blocks) on `stderr`, terminating with exit code `2`.
 
 ---
 
 ## 3. Development Tools and Resources
 
-### Libraries (Standard STL Only)
+### 3.1 Libraries
+The application relies strictly on standard C++ libraries to optimize compatibility, avoid runtime dependency bloat, and ensure safety:
+- **`<iostream>`**: For writing structured JSON outputs to `stdout` and diagnostic logs or errors to `stderr`.
+- **`<vector>`**: Dynamically allocated sequential container for lists of issues and command parameters.
+- **`<unordered_map>`**: For $O(1)$ lookups when matching agent names to their polymorphic reference instances in the registry.
+- **`<memory>`**: Essential for `std::shared_ptr` and `std::make_shared` to establish dynamic memory management and eliminate memory leaks.
+- **`<fstream>`**: File input and output streams for reading/writing persistence files.
+- **`<string>`**: Standard text representation, manipulation, and substring matching.
+- **`<algorithm>`**: Utility functions for search boundaries and sorting operations.
+- **`<stdexcept>`**: For uniform throwing of `std::invalid_argument` and `std::runtime_error` to catch at execution boundaries.
 
-* `<iostream>` & `<fstream>`: Utilized to stream structural data to calling runtimes (`std::cout`, `std::cerr`) and pipeline internal configurations to disk.
-* `<vector>`, `<string>`, & `<unordered_map>`: Used to track files, map active input commands to functional methods, and catalog active issue tracking arrays efficiently.
-* `<memory>`: Enforces clean dynamic allocations using smart pointer wrappers (`std::unique_ptr` and `std::shared_ptr`) to eliminate explicit manual tracking overhead.
-* `<algorithm>`: Powers sorting processes for tasks and streamlines command-line keyword matches.
-* `<stdexcept>`: Isolates and captures parameter violations, triggering clean exit code signaling vectors back to the calling parent script.
-
-### Build Configuration Tool
-
-* **CMake (CMakeLists.txt):** Maps and links separate compilation units (`.cpp` and `.hpp` files) into a single optimized executable file target.
-
----
-
-## Technical Requirements Checklist & Mapping Plan
-
-To satisfy the academic workload for a **group of 4 students**, the framework splits core technical challenges directly across isolated boundaries:
-
-| Technical Requirement | Specific Implementation Architecture | Target File Targets | Target Line Estimate |
-| --- | --- | --- | --- |
-| **1. Code Volume** | Writing comprehensive argument parsers, error boundary wrappers, state machines, and file translators naturally stretches code architecture past the target threshold. | `src/*.cpp`, `include/*.hpp` | ~900 LOC |
-| **2. OOP Principles** | Extensively utilizes encapsulation across classes. Employs inheritance and polymorphism to execute target logic updates over varied agent archetypes. | `Agent.hpp`, `CommandRouter.cpp` | ~250 LOC |
-| **3. Smart Memory** | Implements automated heap allocations via `std::shared_ptr` to safely build polymorphic object arrays without resource leak exposure. | `IssueBoard.hpp`, `main.cpp` | ~130 LOC |
-| **4. Advanced Structures** | Leverages fast map collections (`std::unordered_map`) to index active task objects and speed up key flag query processing. | `IssueBoard.cpp` | ~170 LOC |
-| **5. I/O & Exceptions** | Employs robust try-catch mechanisms to intercept processing data faults or configuration state errors, passing explicit exit codes back to standard systems. | `CommandRouter.cpp`, `main.cpp` | ~200 LOC |
+### 3.2 Frameworks
+**No external application frameworks** are used. By relying on a raw C++ toolchain (with C++17 support) and standard compiler flags managed by a `Makefile`, the application compiles into a lean executable without dependencies, making it simple to package and install.
 
 ---
 
-## Final Project Report Framework
+## 4. Technical Requirements
 
-### 1. Overall Flowchart
+The implementation satisfies the academic criteria for a 4-student group project:
 
-The flowchart must map the immediate execution flow of a headless CLI utility:
+### 4.1 Code Volume
+The system contains over 800 lines of functional C++ code (excluding blanks, standard imports, and comments). Modularity splits operations into distinct logic boundaries across files.
 
-* `Start` $\rightarrow$ Capture `argc` and `argv` context vectors.
-* `Parse Input` $\rightarrow$ Evaluate target parameter flags. If flags are malformed $\rightarrow$ Write to `stderr` $\rightarrow$ Exit with Code 1.
-* `Load Memory` $\rightarrow$ Parse state history database from disk storage.
-* `Process Mutation` $\rightarrow$ Alter target task parameters or execute state change based on input command.
-* `Commit Changes` $\rightarrow$ Re-write state history payload cleanly to local storage disk files.
-* `Output Log` $\rightarrow$ Write response payload or structural JSON metrics to `stdout` $\rightarrow$ Exit Code 0.
+### 4.2 Object-Oriented Programming (OOP)
+- **Classes & Encapsulation**: Data members in `Issue`, `Agent`, `IssueBoard`, and `MulticaWorkspace` are private/protected and manipulated via accessor/mutator methods.
+- **Inheritance & Polymorphism**:
+  - `Workspace` is an abstract base class with a virtual destructor and pure virtual load/save contracts.
+  - `MulticaWorkspace` inherits from `Workspace` and overrides all load/save operations.
+  - The `IssueBoard` orchestrator interacts with the workspace polymorphically through a base `std::shared_ptr<Workspace>` pointer.
+- **Memory Management**:
+  - Instantiation of the workspace is done dynamically using smart pointers: `std::shared_ptr<Workspace> workspace = std::make_shared<MulticaWorkspace>("multica_issues.dat", "multica_agents.dat")`.
+  - The workspace interface is injected into the board, ensuring exception-safe memory tracking without raw pointers or memory leaks.
 
-### 2. Class & Architecture Diagram
+### 4.4 Advanced Data Structures & STL
+- **Vectors (`std::vector`)**: Used for sequential ordering of active issues and flag parameters.
+- **Hash Maps (`std::unordered_map`)**: Key-value maps (`std::string` to concrete `Agent` values) used for agent registration.
+- **Streams**: Structured buffer reading and writing for flat files.
 
-A structural block diagram showing how `main.cpp` calls the `CommandRouter` interface class, which coordinates tasks via the `IssueBoard` container class holding base polymorphic configurations.
+### 4.5 File I/O & Exception Handling
+- State is serialized/deserialized automatically to and from files using `std::ifstream` and `std::ofstream`.
+- Flat file records are parsed using a pipe-delimited parser (`|`).
+- A centralized validation boundary protects the process via `try-catch` blocks in `main.cpp`, routing custom runtime failures to uniform JSON structures on `stderr`.
 
-### 3. Algorithms Pseudo-code
-
-#### Headless Command Parsing & Routing Engine
-
-```text
-FUNCTION main(argc, argv)
-    IF argc < 2 THEN
-        PRINT_TO_STDERR "Usage: ./multica --flag [options]"
-        RETURN 1 (EXIT_FAILURE)
-    END IF
-
-    Initialize CommandRouter router
-    TRY
-        router.loadWorkspaceFromDisk()
-        ActionFlag = argv[1]
-        
-        IF ActionFlag == "--create-issue" THEN
-            ValidateParam(argv[2])
-            ValidateParam(argv[3])
-            ValidateParam(argv[4])
-            router.executeCreateIssue(argv[2], argv[3], argv[4], argv[5] // optional)
-        ELSE IF ActionFlag == "--poll-next" THEN
-            router.executeAgentPollStep()
-        ELSE IF ActionFlag == "--list-json" THEN
-            router.printActiveBoardAsJSON()
-        ELSE IF ActionFlag == "--list-agents" THEN
-            router.printActiveAgentsAsJSON()
-        ELSE IF ActionFlag == "--assign-issue" THEN
-            router.executeManualAssignment(argv[2], argv[3])
-        ELSE IF ActionFlag == "--update-status" THEN
-            router.executeUpdateStatus(argv[2], argv[3])
-        ELSE
-            THROW InvalidArgumentException("Unknown CLI parameter flag")
-        END IF
-        
-        router.saveWorkspaceToDisk()
-        RETURN 0 (EXIT_SUCCESS)
-        
-    CATCH Exception e
-        PRINT_TO_STDERR "ERROR: " + e.message()
-        RETURN 2 (EXIT_LOGIC_ERROR)
-    END TRY
-END FUNCTION
-
-```
-
-### 4. Implementation Details
-
-The project report demonstrates structural code requirements without human-facing user input logic (`std::cin`):
-
-```cpp
-// Architectural Snippet: Pure CLI Command Processor Target
-#include <iostream>
-#include <string>
-#include <vector>
-#include <memory>
-
-class CommandRouter {
-private:
-    std::vector<std::string> arguments;
-public:
-    CommandRouter(int argc, char* argv[]) {
-        // Safe conversion of raw command array parameters into STL structures
-        for (int i = 0; i < argc; ++i) {
-            arguments.push_back(std::string(argv[i]));
-        }
-    }
-
-    void process() {
-        if (arguments.size() < 2) {
-            throw std::runtime_error("Missing parameter flags. Use --help for usage details.");
-        }
-        
-        if (arguments[1] == "--create-issue") {
-            if (arguments.size() < 5) throw std::invalid_argument("Usage: --create-issue <title> <desc> <tag> [priority]");
-            std::cout << "{\"status\":\"success\", \"message\":\"Issue created successfully\"}\n";
-        }
-    }
-};
-
-```
-
-### 5. Testing & Validation Matrix
-
-Because your software handles automated machine prompts, your test scripts must demonstrate robust parameter scanning:
-
-| Test Case ID | Scenario / Feature Tested | Script Execution Syntax | Expected Standard Pipeline Behavior | Result |
-| --- | --- | --- | --- | --- |
-| **TC-01** | Direct Issue Insertion | `./multica --create-issue "Write DB Unit Test" "Create DB test cases" "database" 3` | Appends data node to local files; returns JSON payload on `stdout`, Exit Code 0. | Pass |
-| **TC-02** | Automated State Advancement | `./multica --poll-next` | Polls unassigned tickets, links eligible workers, prints active mutation log strings. | Pass |
-| **TC-03** | Missing Execution Fields | `./multica --create-issue "Incomplete Task"` | Captures empty parameter data boundary; routes error notice to `stderr`, Exit Code 1. | Pass |
-| **TC-04** | Invalid Flow Invocation | `./multica --invalid-flag` | Handles unknown option safely using inner code catch traps; blocks program failure, Exit Code 1. | Pass |
+### 4.6 Modularity
+Source code is organized into a clean folder structure containing separate interfaces (`.hpp`) and implementations (`.cpp`):
+- `include/Agent.hpp` & `include/Issue.hpp`
+- `include/IssueBoard.hpp` & `src/IssueBoard.cpp`
+- `include/MulticaWorkspace.hpp` & `src/MulticaWorkspace.cpp`
+- `include/CommandRouter.hpp` & `src/CommandRouter.cpp`
+- `src/main.cpp`
+- `Makefile`
 
 ---
 
-## CLI Usage Guide
+## 5. Final Project Report Structure
 
-**MicroMultica** is an agent-executable headless CLI tool. To compile and run the engine, follow the guide below.
+The final project report must follow this logical layout to document the completed software:
 
-### 1. Compilation
+### 5.1 Overall Flowchart
+A diagram detailing execution flow from CLI entry, through loading state files, routing command arguments, executing mutations, writing back to disk, and returning exit codes.
 
-Build the executable target using `make`:
-```bash
-make clean && make
-```
-This builds the `./multica` binary using standard C++17 compilers.
+### 5.2 Class & Architecture Diagram
+A comprehensive UML Class Diagram visualizing encapsulation, class data members, functions, inheritance relationships, and ownership rules (such as compositions and aggregations).
 
-### 2. Available Commands and Syntaxes
+### 5.3 Algorithms
+Detailed pseudo-code outlines describing:
+1. Entry routing and exception boundary operations.
+2. The score compounding calculation rules.
+3. The state transition logic for advancing issue lifecycles.
 
-#### 1. Injects a New Tracking Issue
-* **Syntax:** `./multica --create-issue <title> <description> <tag> [priority]`
-* **Arguments:** 
-  * `<title>`: Short identifier for the issue.
-  * `<description>`: Details about the task (include word `CRASH` to trigger simulated execution failures).
-  * `<tag>`: Specialty tag matching agent specialties (`auth`, `database`, `frontend`).
-  * `[priority]`: Optional priority level from `1` (Critical) to `5` (Minimal). Defaults to `3` (Medium).
-* **Example:**
-  ```bash
-  ./multica --create-issue "Optimize DB Queries" "Fix slow indices" "database" 2
-  ```
+### 5.4 Implementation Details
+Code extracts demonstrating OOP principles, inheritance, polymorphic bindings, smart pointer declarations, file streams, and delimiters, alongside concise explanations.
 
-#### 2. Drives State-Machine Lifecycle Step
-* **Syntax:** `./multica --poll-next`
-* **Description:** Advances exactly one issue by one state transition step (ENQUEUED $\rightarrow$ CLAIMED $\rightarrow$ RUNNING $\rightarrow$ COMPLETED/BLOCKED). Automatically calculates compound scores to assign issues to the best available agent.
-* **Example:**
-  ```bash
-  ./multica --poll-next
-  ```
+### 5.5 Testing & Validation
+A complete test case table validating success scenarios, failure scenarios, invalid flag exceptions, validation failures, boundary states (like `CRASH` indicators or description limits), and file parsing checks.
 
-#### 3. Lists All Board Issues in JSON
-* **Syntax:** `./multica --list-json`
-* **Description:** Dumps all current issue models stored in `multica_issues.dat` as a structured JSON array.
-* **Example:**
-  ```bash
-  ./multica --list-json
-  ```
-
-#### 4. Lists Registered Agents in JSON
-* **Syntax:** `./multica --list-agents`
-* **Description:** Streams out stats of registered agents (Gemini-Advanced, Cursor-Composer, Claude-3.5) including their specialty, success count, and rate.
-* **Example:**
-  ```bash
-  ./multica --list-agents
-  ```
-
-#### 5. Manually Assign an Issue
-* **Syntax:** `./multica --assign-issue <id> <agent_name>`
-* **Description:** Overrides automatic allocation to claim a task manually for a specific agent.
-* **Example:**
-  ```bash
-  ./multica --assign-issue 1 "Claude-3.5"
-  ```
-
-#### 6. Force Update Issue Status
-* **Syntax:** `./multica --update-status <id> <STATUS>`
-* **Description:** Forces the issue `<id>` to transition into the specified state (`ENQUEUED`, `CLAIMED`, `RUNNING`, `COMPLETED`, or `BLOCKED`).
-* **Example:**
-  ```bash
-  ./multica --update-status 1 COMPLETED
-  ```
-
-### 3. Exit Code Structure
-* **`0`**: Command successfully processed.
-* **`1`**: Invalid arguments, missing parameters, or status validation errors.
-* **`2`**: System-level failure or execution anomalies.
-
-
----
+### 5.6 Requirement Mapping
+A reference index mapping the six project requirements to specific source files and line number spans.

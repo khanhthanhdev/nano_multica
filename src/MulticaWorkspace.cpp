@@ -54,7 +54,7 @@ void MulticaWorkspace::loadIssues(std::vector<Issue>& issues) const {
 }
 
 void MulticaWorkspace::loadAgentStats(
-    std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const {
+    std::unordered_map<std::string, Agent>& registry) const {
 
     std::ifstream file(agentsFile);
     if (!file.is_open()) return; // Not yet created — fresh workspace
@@ -74,13 +74,11 @@ void MulticaWorkspace::loadAgentStats(
 
         try {
             auto it = registry.find(name);
-            if (it != registry.end() && it->second) {
-                // Replay historic performance data into the live agent object
+            if (it != registry.end()) {
                 int successes = successStr.empty() ? 0 : std::stoi(successStr);
                 int total     = totalStr.empty()   ? 0 : std::stoi(totalStr);
-                // Record individually to keep counter semantics correct
                 for (int i = 0; i < total; ++i) {
-                    it->second->recordResult(i < successes);
+                    it->second.recordResult(i < successes);
                 }
             }
         } catch (const std::exception& e) {
@@ -113,7 +111,7 @@ void MulticaWorkspace::saveIssues(const std::vector<Issue>& issues) const {
 }
 
 void MulticaWorkspace::saveAgentStats(
-    const std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const {
+    const std::unordered_map<std::string, Agent>& registry) const {
 
     std::ofstream file(agentsFile, std::ios::trunc);
     if (!file.is_open()) {
@@ -122,13 +120,12 @@ void MulticaWorkspace::saveAgentStats(
         return;
     }
 
-    for (const auto& [name, agentPtr] : registry) {
-        if (!agentPtr) continue;
+    for (const auto& [name, agent] : registry) {
         // Serialize: name | specialty | success_count | total_count
-        file << agentPtr->getName()         << '|'
-             << agentPtr->getSpecialty()    << '|'
-             << agentPtr->getSuccessCount() << '|'
-             << agentPtr->getTotalCount()   << '\n';
+        file << agent.getName()         << '|'
+             << agent.getSpecialty()    << '|'
+             << agent.getSuccessCount() << '|'
+             << agent.getTotalCount()   << '\n';
     }
 }
 
@@ -136,14 +133,14 @@ void MulticaWorkspace::saveAgentStats(
 
 void MulticaWorkspace::load(
     std::vector<Issue>& issues,
-    std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const {
+    std::unordered_map<std::string, Agent>& registry) const {
     loadIssues(issues);
     loadAgentStats(registry);
 }
 
 void MulticaWorkspace::save(
     const std::vector<Issue>& issues,
-    const std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const {
+    const std::unordered_map<std::string, Agent>& registry) const {
     saveIssues(issues);
     saveAgentStats(registry);
 }
