@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <unordered_map>
-#include <memory>
+#include <optional>
 #include <string>
 #include "Issue.hpp"
 #include "Agent.hpp"
@@ -17,7 +17,7 @@
 //
 // Responsibilities:
 //   • Maintain the ordered list of Issues with unique integer IDs
-//   • Register and index polymorphic Agent instances by name
+//   • Register and index Agent instances by name (value-stored, no polymorphism)
 //   • Route issues through the ENQUEUED → CLAIMED → RUNNING → COMPLETED/BLOCKED
 //     state machine using score-compounding deterministic assignment
 //   • Emit structured JSON to stdout and errors to stderr
@@ -25,9 +25,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 class IssueBoard {
 private:
-    std::vector<Issue>                                    issues;
-    std::unordered_map<std::string, std::shared_ptr<Agent>> agentRegistry;
-    MulticaWorkspace                                      workspace;
+    std::vector<Issue>                    issues;
+    std::unordered_map<std::string, Agent> agentRegistry;
+    MulticaWorkspace                       workspace;
 
     // ── Internal helpers ───────────────────────────────────────────────────
 
@@ -36,9 +36,9 @@ private:
     const Issue* findIssueById(int id) const;
 
     // Score-compounding agent selection algorithm.
-    // Iterates agentRegistry, calls agent->computeScore(issue), and returns
-    // the shared_ptr with the highest score. Returns nullptr if registry is empty.
-    std::shared_ptr<Agent> findBestAgent(const Issue& issue) const;
+    // Iterates agentRegistry, calls agent.computeScore(issue), and returns
+    // a pointer to the best-scoring Agent, or nullptr if the registry is empty.
+    const Agent* findBestAgent(const Issue& issue) const;
 
     // Emit a JSON state-change event line to stdout.
     void emitStateChange(int issueId,
@@ -54,8 +54,8 @@ public:
 
     // ── Agent Registry ─────────────────────────────────────────────────────
 
-    // Register a polymorphic agent; silently ignores nullptr.
-    void registerAgent(std::shared_ptr<Agent> agent);
+    // Register an agent by value; silently ignores agents with empty names.
+    void registerAgent(Agent agent);
 
     // ── Issue Management ───────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ public:
     // Advance one issue by exactly one lifecycle step:
     //   ENQUEUED  → CLAIMED  (score-compounding assignment)
     //   CLAIMED   → RUNNING  (prepare for execution)
-    //   RUNNING   → COMPLETED or BLOCKED (polymorphic executeTask())
+    //   RUNNING   → COMPLETED or BLOCKED (agent.executeTask())
     // Records agent performance stats on RUNNING→terminal transitions.
     // Emits an idle JSON message if no issue required a transition.
     void processNextLifecycleStep();

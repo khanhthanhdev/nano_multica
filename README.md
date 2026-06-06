@@ -6,7 +6,7 @@ A headless C++ state-machine engine for managing AI agent issue execution lifecy
 
 This repo publishes an [Agent Skill](https://skills.sh) for AI coding assistants:
 
-### [`nano-multica`](./nano-multica/)
+### [`nano-multica`](./SKILL.md)
 
 Instructions any AI agent can follow to auto-install and use the `multica` CLI for issue/task tracking.
 
@@ -45,7 +45,17 @@ Requires `g++` with C++17 support.
 |------|-------------|
 | `src/` | C++ source files |
 | `include/` | C++ headers |
-| `nano-multica/` | Agent Skill (SKILL.md) |
+| `SKILL.md` | Agent Skill definition |
 | `install.sh` | System install script |
 | `multica_issues.dat` | Issue state (auto-created) |
 | `multica_agents.dat` | Agent registry (auto-created) |
+
+## Registered agents
+
+| Agent | Specialty | Failure mode |
+|-------|-----------|-------------|
+| Claude Code | auth | Description contains "CRASH" |
+| Github Copilot | database | Empty title (malformed task) |
+| Codex | frontend | Priority 1 + "UNVERIFIED" in description |
+| Opencode | general | None (always succeeds) |
+| Pi | research | Description > 500 chars |

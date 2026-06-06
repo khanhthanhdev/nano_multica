@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <memory>
 #include "Issue.hpp"
 #include "Agent.hpp"
 
@@ -20,7 +19,7 @@
 //     Format: id|title|description|tag|status_code|assignee|priority
 //
 //   • multica_agents.dat  — Pipe-delimited CSV, one agent record per line
-//     Format: name|specialty|success_count|total_count
+//     Format: name|success_count|total_count
 // ─────────────────────────────────────────────────────────────────────────────
 class MulticaWorkspace {
 private:
@@ -41,7 +40,7 @@ public:
     // Deserialize agent performance stats from disk and update the matching
     // agents already registered in the agentRegistry map.
     // Only updates agents whose names exist in the map (does not create new agents).
-    void loadAgentStats(std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const;
+    void loadAgentStats(std::unordered_map<std::string, Agent>& registry) const;
 
     // ── Save Operations ────────────────────────────────────────────────────
 
@@ -50,17 +49,17 @@ public:
     void saveIssues(const std::vector<Issue>& issues) const;
 
     // Serialize agent performance stats to disk (truncates existing file).
-    void saveAgentStats(const std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const;
+    void saveAgentStats(const std::unordered_map<std::string, Agent>& registry) const;
 
     // ── Convenience ───────────────────────────────────────────────────────
 
     // Perform a full load of both issues and agent stats in one call.
     void load(std::vector<Issue>& issues,
-              std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const;
+              std::unordered_map<std::string, Agent>& registry) const;
 
     // Perform a full save of both issues and agent stats in one call.
     void save(const std::vector<Issue>& issues,
-              const std::unordered_map<std::string, std::shared_ptr<Agent>>& registry) const;
+              const std::unordered_map<std::string, Agent>& registry) const;
 
     // Return the configured file paths (for diagnostics/logging)
     const std::string& getIssuesPath() const { return issuesFile; }

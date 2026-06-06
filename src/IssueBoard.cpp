@@ -38,24 +38,21 @@ const Issue* IssueBoard::findIssueById(int id) const {
 // Deterministic Agent Score Compounding Algorithm
 //
 // For each registered agent, compute a compound score relative to the issue:
-//   score = (specialty_match ? 10 : 0)        -- tag affinity weight
-//         + (agent.getSuccessRate() * 5.0)     -- historic performance weight
-//         + (6 - issue.getPriority())          -- priority urgency weight (1..5 → 5..1)
+//   score = (agent.getSuccessRate() * 10.0)     -- historic performance weight
+//         + (6 - issue.getPriority())           -- priority urgency weight (1..5 → 5..1)
 //
-// The agent with the highest score is selected. Falls back to the first
-// registered agent if the registry contains exactly one entry.
-std::shared_ptr<Agent> IssueBoard::findBestAgent(const Issue& issue) const {
+// The agent with the highest score is selected.
+const Agent* IssueBoard::findBestAgent(const Issue& issue) const {
     if (agentRegistry.empty()) return nullptr;
 
-    std::shared_ptr<Agent> bestAgent = nullptr;
+    const Agent* bestAgent = nullptr;
     double bestScore = -1.0;
 
-    for (const auto& [name, agentPtr] : agentRegistry) {
-        if (!agentPtr) continue;
-        double score = agentPtr->computeScore(issue);
+    for (const auto& [name, agent] : agentRegistry) {
+        double score = agent.computeScore(issue);
         if (score > bestScore) {
             bestScore = score;
-            bestAgent = agentPtr;
+            bestAgent = &agent;
         }
     }
     return bestAgent;
@@ -74,9 +71,9 @@ void IssueBoard::emitStateChange(int issueId,
 
 // ── Agent Registry ─────────────────────────────────────────────────────────
 
-void IssueBoard::registerAgent(std::shared_ptr<Agent> agent) {
-    if (agent == nullptr) return;
-    agentRegistry[agent->getName()] = agent;
+void IssueBoard::registerAgent(Agent agent) {
+    if (agent.getName().empty()) return;
+    agentRegistry[agent.getName()] = std::move(agent);
 }
 
 // ── Issue Management ───────────────────────────────────────────────────────
@@ -114,7 +111,7 @@ void IssueBoard::assignIssue(int id, const std::string& agentName) {
     }
 
     auto it = agentRegistry.find(agentName);
-    if (it == agentRegistry.end() || !it->second) {
+    if (it == agentRegistry.end()) {
         throw std::invalid_argument(
             "Agent not registered: \"" + agentName + "\". "
             "Use --list-agents to see available agents.");
@@ -148,7 +145,7 @@ void IssueBoard::processNextLifecycleStep() {
         // ── State 1: ENQUEUED → CLAIMED ──────────────────────────────────
         // Score-compounding agent selection assigns the best-fit agent.
         if (issue.getStatus() == IssueStatus::ENQUEUED) {
-            std::shared_ptr<Agent> best = findBestAgent(issue);
+            const Agent* best = findBestAgent(issue);
 
             if (!best) {
                 std::cerr << "{\"status\":\"warning\","
@@ -175,7 +172,7 @@ void IssueBoard::processNextLifecycleStep() {
         } else if (issue.getStatus() == IssueStatus::RUNNING) {
             auto it = agentRegistry.find(issue.getAssignee());
 
-            if (it == agentRegistry.end() || !it->second) {
+            if (it == agentRegistry.end()) {
                 // Assigned agent was de-registered after assignment — force-block
                 issue.setStatus(IssueStatus::BLOCKED);
                 emitStateChange(issue.getId(), "BLOCKED");
@@ -183,9 +180,9 @@ void IssueBoard::processNextLifecycleStep() {
                 break;
             }
 
-            // Runtime polymorphism: concrete executeTask() called via base pointer
-            bool success = it->second->executeTask(issue);
-            it->second->recordResult(success);  // Update historic performance stats
+            // Direct method call on concrete Agent instance
+            bool success = it->second.executeTask(issue);
+            it->second.recordResult(success);  // Update historic performance stats
 
             if (success) {
                 issue.setStatus(IssueStatus::COMPLETED);
@@ -229,21 +226,19 @@ void IssueBoard::printBoardJSON() const {
 void IssueBoard::printAgentsJSON() const {
     std::cout << "[";
     bool first = true;
-    for (const auto& [name, agentPtr] : agentRegistry) {
-        if (!agentPtr) continue;
+    for (const auto& [name, agent] : agentRegistry) {
         if (!first) std::cout << ",";
         first = false;
 
         // Format success rate as a percentage string (two decimal places)
         std::ostringstream rateStr;
         rateStr << std::fixed << std::setprecision(2)
-                << (agentPtr->getSuccessRate() * 100.0);
+                << (agent.getSuccessRate() * 100.0);
 
         std::cout << "{"
-                  << "\"name\":\""      << agentPtr->getName()         << "\""
-                  << ",\"specialty\":\"" << agentPtr->getSpecialty()    << "\""
-                  << ",\"tasks_total\":"  << agentPtr->getTotalCount()
-                  << ",\"tasks_success\":" << agentPtr->getSuccessCount()
+                  << "\"name\":\""       << agent.getName()         << "\""
+                  << ",\"tasks_total\":"  << agent.getTotalCount()
+                  << ",\"tasks_success\":" << agent.getSuccessCount()
                   << ",\"success_rate\":\"" << rateStr.str() << "%\""
                   << "}";
     }
