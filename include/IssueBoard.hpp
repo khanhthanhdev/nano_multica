@@ -53,7 +53,12 @@ public:
     void updateIssueStatus(int id, const std::string& statusStr);
 
     // ── State-Machine Lifecycle ────────────────────────────────────────────
-    void processNextLifecycleStep();
+    // Returns true if a state transition occurred; false if no actionable issues.
+    bool processNextLifecycleStep();
+
+    // ── Read-only inspection (for tooling/tests) ──────────────────────────
+    const std::vector<Issue>&                     getIssues()   const { return issues; }
+    const std::unordered_map<std::string, Agent>& getAgents()   const { return agentRegistry; }
 
     // ── JSON Output ────────────────────────────────────────────────────────
     void printBoardJSON() const;

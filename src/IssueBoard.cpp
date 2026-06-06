@@ -135,7 +135,7 @@ void IssueBoard::updateIssueStatus(int id, const std::string& statusStr) {
 
 // ── State-Machine Lifecycle ────────────────────────────────────────────────
 
-void IssueBoard::processNextLifecycleStep() {
+bool IssueBoard::processNextLifecycleStep() {
     bool processedAny = false;
 
     for (auto& issue : issues) {
@@ -193,6 +193,7 @@ void IssueBoard::processNextLifecycleStep() {
     if (!processedAny) {
         std::cout << "{\"status\":\"idle\",\"message\":\"No actionable issues found.\"}\n";
     }
+    return processedAny;
 }
 
 // ── JSON Output ────────────────────────────────────────────────────────────

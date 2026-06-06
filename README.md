@@ -49,11 +49,3 @@ Requires `g++` with C++17 support.
 | `install.sh` | System install script |
 | `multica_issues.dat` | Issue state (auto-created) |
 | `multica_agents.dat` | Agent registry (auto-created) |
-
-## Registered agents
-
-| Agent | Specialty | Failure mode |
-|-------|-----------|-------------|
-| Claude-3.5 | auth | Description contains "CRASH" |
-| Cursor-Composer | database | Empty title |
-| Gemini-Advanced | frontend | Priority 1 + "UNVERIFIED" in description |
