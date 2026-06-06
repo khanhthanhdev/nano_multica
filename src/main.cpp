@@ -3,6 +3,7 @@
 #include "Agent.hpp"
 #include "MulticaWorkspace.hpp"
 #include <iostream>
+#include <memory>
 #include <unordered_map>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,11 +14,6 @@
 //   0 — Success
 //   1 — Invalid argument / validation failure  (std::invalid_argument)
 //   2 — Logic or system exception              (std::exception)
-//
-// Agent model:
-//   A single "Coding Agent" is registered — representing any external AI agent
-//   (e.g. one reading skill.md) that invokes this CLI to track and advance work.
-//   The agent is identified by a string name and tracked for performance stats.
 // ─────────────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
@@ -32,15 +28,29 @@ int main(int argc, char* argv[]) {
         // Destructor will save all state back to disk on scope exit (RAII commit).
         IssueBoard board(workspace);
 
-        // ── Agent Registration & Stats Restore ────────────────────────────
-        // Register a single Coding Agent representing the external AI caller.
-        // Historic performance stats are restored from disk to feed the
-        // score-compounding algorithm on subsequent invocations.
-        Agent codingAgent("Coding Agent");
-        board.registerAgent(codingAgent);
+        // ── Agent Registration ────────────────────────────────────────────
+        // Dynamically allocate polymorphic agents via memory-safe shared_ptr
+        // wrappers. Each agent declares a specialty tag that maps to Issue tags,
+        // enabling score-compounding assignment in the state machine.
+        auto claudeAgent = std::make_shared<ClaudeAgent>("Claude-3.5",     "auth");
+        auto cursorAgent = std::make_shared<CursorAgent>("Cursor-Composer", "database");
+        auto geminiAgent = std::make_shared<GeminiAgent>("Gemini-Advanced", "frontend");
 
-        std::unordered_map<std::string, Agent> agentRestoreMap;
-        agentRestoreMap[codingAgent.getName()] = codingAgent;
+        board.registerAgent(claudeAgent);
+        board.registerAgent(cursorAgent);
+        board.registerAgent(geminiAgent);
+
+        // ── Restore Historic Agent Performance Stats ──────────────────────
+        // After agents are registered, load their persisted success/total counts
+        // from the agents file. This feeds into the score-compounding algorithm
+        // so agents improve or degrade in priority based on historic performance.
+        //
+        // Build a temporary registry map pointing to the live agent objects
+        // so the workspace can match by name and replay recorded results.
+        std::unordered_map<std::string, std::shared_ptr<Agent>> agentRestoreMap;
+        agentRestoreMap[claudeAgent->getName()] = claudeAgent;
+        agentRestoreMap[cursorAgent->getName()] = cursorAgent;
+        agentRestoreMap[geminiAgent->getName()] = geminiAgent;
         workspace.loadAgentStats(agentRestoreMap);
 
         // ── CLI Routing ───────────────────────────────────────────────────

@@ -66,7 +66,7 @@ void CommandRouter::printHelp() {
         "\n"
         "  --assign-issue <id> <agent_name>\n"
         "      Manually assign issue <id> to a registered agent.\n"
-        "      Example: ./multica --assign-issue 3 \"Claude Code\"\n"
+        "      Example: ./multica --assign-issue 3 \"Claude-3.5\"\n"
         "\n"
         "  --update-status <id> <STATUS>\n"
         "      Force-update an issue's status. Valid STATUS values:\n"

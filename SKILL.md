@@ -81,13 +81,3 @@ If not installed, run the install script bundled with this skill (`scripts/insta
 | Exit code 1 | Malformed arguments | Check quotes, flag spelling |
 | Exit code 2 | Corrupt state files | Delete `multica_*.dat` and recreate |
 | `command not found` | Not installed | Run install script |
-
-## Registered agents
-
-| Agent | Specialty | Failure condition |
-|-------|-----------|-----------------|
-| Claude Code | auth | Description contains "CRASH" |
-| Github Copilot | database | Empty title |
-| Codex | frontend | Priority 1 + "UNVERIFIED" in description |
-| Opencode | general | None (always succeeds) |
-| Pi | research | Description > 500 chars |

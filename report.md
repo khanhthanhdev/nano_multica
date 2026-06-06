@@ -12,7 +12,7 @@ The high-level execution flow of our headless, non-interactive C++ command-line 
 graph TD
     A([Start: ./multica argv]) --> B[Initialize MulticaWorkspace]
     B --> C[Construct IssueBoard & Load State from Disk]
-    C --> D[Instantiate and Register CodingAgent Instances]
+    C --> D[Instantiate and Register Polymorphic Agents]
     D --> E[Restore Historic Agent Performance Stats]
     E --> F[Construct CommandRouter]
     F --> G{Route Action Flag}
@@ -101,7 +101,15 @@ classDiagram
         +executeTask(Issue) bool*
     }
     
-    class CodingAgent {
+    class ClaudeAgent {
+        +executeTask(Issue) bool
+    }
+    
+    class CursorAgent {
+        +executeTask(Issue) bool
+    }
+    
+    class GeminiAgent {
         +computeScore(Issue) double
         +executeTask(Issue) bool
     }
@@ -139,7 +147,9 @@ classDiagram
     IssueBoard *-- Issue : Composition (contains list of)
     IssueBoard *-- Agent : Aggregation (holds registry of std::shared_ptr)
     
-    Agent <|-- CodingAgent : Inheritance
+    Agent <|-- ClaudeAgent : Inheritance
+    Agent <|-- CursorAgent : Inheritance
+    Agent <|-- GeminiAgent : Inheritance
     
     CommandRouter ..> IssueBoard : Directs mutations on
 ```
@@ -160,12 +170,10 @@ FUNCTION main(argc, argv)
         Initialize MulticaWorkspace with paths ("multica_issues.dat", "multica_agents.dat")
         Initialize IssueBoard board with workspace
         
-        // Dynamically instantiate polymorphic CodingAgent instances
-        Register CodingAgent("Claude Code", "auth")
-        Register CodingAgent("Github Copilot", "database")
-        Register CodingAgent("Codex", "frontend")
-        Register CodingAgent("Opencode", "general")
-        Register CodingAgent("Pi", "research")
+        // Dynamically instantiate polymorphic agents
+        Register ClaudeAgent("Claude-3.5", "auth")
+        Register CursorAgent("Cursor-Composer", "database")
+        Register GeminiAgent("Gemini-Advanced", "frontend")
         
         Load historic agent stats from workspace agent file
         
@@ -296,7 +304,7 @@ Here are the key C++ snippets illustrating core object-oriented programming, sma
 
 ### A. Object-Oriented Programming (OOP) & Polymorphism
 
-The system uses an abstract base class `Agent` representing a worker interface, and a single concrete class `CodingAgent` that overrides `computeScore` and `executeTask` to implement custom simulations based on its specialty tag.
+The system uses an abstract base class `Agent` representing a worker interface, and concrete classes `ClaudeAgent`, `CursorAgent`, and `GeminiAgent` implementing custom behavioral validation.
 
 *From [Agent.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L17-L73):*
 
@@ -329,39 +337,19 @@ public:
 };
 ```
 
-*From [Agent.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L75-L117):*
+Subclasses implement custom rules. For example, `ClaudeAgent` fails if the word `CRASH` is in the description:
+
+*From [Agent.hpp](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L81-L93):*
 
 ```cpp
-class CodingAgent : public Agent {
+class ClaudeAgent : public Agent {
 public:
     using Agent::Agent;
 
-    // Custom score computation: high-priority bonus for frontend tasks
-    double computeScore(const Issue& issue) const override {
-        double score = Agent::computeScore(issue);
-        if (specialtyTag == "frontend" && issue.getPriority() <= 2) {
-            score += 3.0; // Escalation bonus for critical/high priority frontend issues
-        }
-        return score;
-    }
-
-    // Dynamic task execution simulator mapping specific model boundaries
     bool executeTask(const Issue& issue) override {
-        // Auth/Security agents fail on simulated crash conditions
-        if (specialtyTag == "auth" && issue.getDescription().find("CRASH") != std::string::npos) {
-            return false;
-        }
-        // Database agents fail if the issue title is empty (malformed task context)
-        if (specialtyTag == "database" && issue.getTitle().empty()) {
-            return false;
-        }
-        // Frontend/UI agents fail on unverified critical requirements
-        if (specialtyTag == "frontend" && issue.getPriority() == 1 && issue.getDescription().find("UNVERIFIED") != std::string::npos) {
-            return false;
-        }
-        // Research agents fail if the input size/description exceeds context window limit (500 chars)
-        if (specialtyTag == "research" && issue.getDescription().length() > 500) {
-            return false;
+        // Simulates custom engine behavior
+        if (issue.getDescription().find("CRASH") != std::string::npos) {
+            return false; // Triggers BLOCKED status
         }
         return true;
     }
@@ -370,25 +358,19 @@ public:
 
 ### B. Dynamic Memory Management & Smart Pointers
 
-Memory leaks are prevented by holding agents in an `unordered_map` of `std::shared_ptr<Agent>`. Instantiation is completed cleanly with `std::make_shared<CodingAgent>`.
+Memory leaks are prevented by holding agents in an `unordered_map` of `std::shared_ptr<Agent>`. Instantiation is completed cleanly with `std::make_shared`.
 
-*From [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L31-L45):*
+*From [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L31-L41):*
 
-// Dynamically register agent profiles using a clean loop
-std::vector<std::pair<std::string, std::string>> agentProfiles = {
-    {"Claude Code",    "auth"},
-    {"Github Copilot", "database"},
-    {"Codex",          "frontend"},
-    {"Opencode",       "general"},
-    {"Pi",             "research"}
-};
+```cpp
+// Dynamically allocate polymorphic agents via memory-safe shared_ptr
+auto claudeAgent = std::make_shared<ClaudeAgent>("Claude-3.5",     "auth");
+auto cursorAgent = std::make_shared<CursorAgent>("Cursor-Composer", "database");
+auto geminiAgent = std::make_shared<GeminiAgent>("Gemini-Advanced", "frontend");
 
-std::unordered_map<std::string, std::shared_ptr<Agent>> agentRestoreMap;
-for (const auto& [name, specialty] : agentProfiles) {
-    auto agent = std::make_shared<CodingAgent>(name, specialty);
-    board.registerAgent(agent);
-    agentRestoreMap[name] = agent;
-}
+board.registerAgent(claudeAgent);
+board.registerAgent(cursorAgent);
+board.registerAgent(geminiAgent);
 ```
 
 ### C. File I/O and State Persistence
@@ -430,12 +412,12 @@ Our integration test suite triggers normal operations, exception routing, polymo
 | Test Case ID | Scenario / Feature Tested | Terminal Execution Syntax | Expected Behavior | Actual stdout / stderr Output | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **TC-01** | Direct Issue Insertion | `./multica --create-issue "Fix Database Index" "Optimize query speeds" "database"` | Appends issue to database, prints success JSON. | `{"status":"success","message":"Issue created","id":1,"title":"Fix Database Index","tag":"database","priority":"MEDIUM"}` | **PASS** |
-| **TC-02** | State Mutation (ENQUEUED $\rightarrow$ CLAIMED) | `./multica --poll-next` | Assigns highest score agent (`Github Copilot` via specialty match) and claims task. | `{"event":"state_change","issue":1,"status":"CLAIMED","agent":"Github Copilot"}` | **PASS** |
-| **TC-03** | State Mutation (CLAIMED $\rightarrow$ RUNNING) | `./multica --poll-next` | Transitions issue from claimed to active execution status. | `{"event":"state_change","issue":1,"status":"RUNNING","agent":"Github Copilot"}` | **PASS** |
-| **TC-04** | Complete State JSON Export | `./multica --list-json` | Exports the full Kanban board state as raw JSON array. | `[{"id":1,"title":"Fix Database Index","tag":"database","priority":"MEDIUM","priority_val":3,"status":"RUNNING","assignee":"Github Copilot"}]` | **PASS** |
+| **TC-02** | State Mutation (ENQUEUED $\rightarrow$ CLAIMED) | `./multica --poll-next` | Assigns highest score agent (`Cursor-Composer` via specialty match) and claims task. | `{"event":"state_change","issue":1,"status":"CLAIMED","agent":"Cursor-Composer"}` | **PASS** |
+| **TC-03** | State Mutation (CLAIMED $\rightarrow$ RUNNING) | `./multica --poll-next` | Transitions issue from claimed to active execution status. | `{"event":"state_change","issue":1,"status":"RUNNING","agent":"Cursor-Composer"}` | **PASS** |
+| **TC-04** | Complete State JSON Export | `./multica --list-json` | Exports the full Kanban board state as raw JSON array. | `[{"id":1,"title":"Fix Database Index","tag":"database","priority":"MEDIUM","priority_val":3,"status":"RUNNING","assignee":"Cursor-Composer"}]` | **PASS** |
 | **TC-05** | Input Exception Boundary (Missing Field) | `./multica --create-issue "Incomplete Task"` | Catches invalid argument counts, returns Exit Code 1. | `{"status":"error","type":"validation","message":"Missing required argument. Usage: --create-issue <title> <desc> <tag> [priority]"}` | **PASS** |
-| **TC-06** | Polymorphic Blocker Path | Description contains keyword `"CRASH"` on a `"auth"` ticket polled to completion | `CodingAgent` (assigned `Claude Code`) executeTask returns false, transition to `BLOCKED`. | `{"event":"state_change","issue":1,"status":"BLOCKED","agent":"Claude Code"}` | **PASS** |
-| **TC-07** | Data Persistence Integrity | Check serialized content after running TC-01 to TC-03 | File contains exact fields matching pipe-delimited schema. | `1|Fix Database Index|Optimize query speeds|database|2|Github Copilot|3` | **PASS** |
+| **TC-06** | Polymorphic Blocker Path | Description contains keyword `"CRASH"` on a `"auth"` ticket polled to completion | `ClaudeAgent` executeTask returns false, transition to `BLOCKED`. | `{"event":"state_change","issue":1,"status":"BLOCKED","agent":"Claude-3.5"}` | **PASS** |
+| **TC-07** | Data Persistence Integrity | Check serialized content after running TC-01 to TC-03 | File contains exact fields matching pipe-delimited schema. | `1|Fix Database Index|Optimize query speeds|database|2|Cursor-Composer|3` | **PASS** |
 
 ---
 
@@ -446,7 +428,7 @@ This section explicitly maps the technical requirements of the assignment to the
 | Requirement Category | Specific Implementation Detail | Target Code Reference |
 | :--- | :--- | :--- |
 | **1. Group Code Volume** | Safe conversion of C-style arguments, exception traps, deterministic assignment scoring formulas, and disk database deserialization. | • [CommandRouter.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/CommandRouter.cpp) (~150 lines)<br>• [IssueBoard.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp) (~250 lines)<br>• [MulticaWorkspace.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp) (~150 lines)<br>• [main.cpp](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp) (~80 lines) |
-| **2. OOP Principles** | • Abstract Base Class definition with virtual destructor and pure virtual methods.<br>• Subclass inheritance with the concrete `CodingAgent` class.<br>• Dynamic runtime polymorphism via base pointer. | • [Agent.hpp:L17-L73](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L17-L73) (Abstract class)<br>• [Agent.hpp:L75-L117](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L75-L117) (Concrete `CodingAgent` class declaration)<br>• [IssueBoard.cpp:L186-L196](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp#L186-L196) (Polymorphic call context) |
-| **3. Smart Memory Management** | Allocation of dynamic agent workers via `std::make_shared`, registered in memory containers using `std::shared_ptr` to avoid raw heap errors. | • [main.cpp:L33-L46](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L33-L46) (`std::make_shared` context)<br>• [IssueBoard.hpp:L29](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L29) (`std::shared_ptr` mapping storage) |
+| **2. OOP Principles** | • Abstract Base Class definition with virtual destructor and pure virtual methods.<br>• Subclass inheritance (`ClaudeAgent`, `CursorAgent`, `GeminiAgent`).<br>• Dynamic runtime polymorphism via base pointer. | • [Agent.hpp:L17-L73](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L17-L73) (Abstract class)<br>• [Agent.hpp:L81-L139](file:///home/thanhkt/code/vinuni/nano_multica/include/Agent.hpp#L81-L139) (Subclass declarations)<br>• [IssueBoard.cpp:L186-L196](file:///home/thanhkt/code/vinuni/nano_multica/src/IssueBoard.cpp#L186-L196) (Polymorphic call context) |
+| **3. Smart Memory Management** | Allocation of dynamic agent workers via `std::make_shared`, registered in memory containers using `std::shared_ptr` to avoid raw heap errors. | • [main.cpp:L35-L41](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L35-L41) (`std::make_shared` context)<br>• [IssueBoard.hpp:L29](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L29) (`std::shared_ptr` mapping storage) |
 | **4. Advanced Structures & STL** | • Fast hash maps (`std::unordered_map`) for agent registry retrieval.<br>• Dynamically sized vectors (`std::vector`) for issues and arguments. | • [IssueBoard.hpp:L28-L29](file:///home/thanhkt/code/vinuni/nano_multica/include/IssueBoard.hpp#L28-L29) (`std::vector` and `std::unordered_map` declaration)<br>• [CommandRouter.hpp:L26](file:///home/thanhkt/code/vinuni/nano_multica/include/CommandRouter.hpp#L26) (`std::vector` for string routing) |
 | **5. File I/O & Exception Handling** | • Input/output filestream readers and writer trunks (`std::ifstream`, `std::ofstream`).<br>• Try-Catch exception handlers in central entry point with exit signaling. | • [MulticaWorkspace.cpp:L17-L54](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp#L17-L54) (File reading)<br>• [MulticaWorkspace.cpp:L95-L113](file:///home/thanhkt/code/vinuni/nano_multica/src/MulticaWorkspace.cpp#L95-L113) (File writing)<br>• [main.cpp:L20-L79](file:///home/thanhkt/code/vinuni/nano_multica/src/main.cpp#L20-L79) (General try-catch boundary) |
