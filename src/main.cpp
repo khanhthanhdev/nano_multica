@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MicroMultica — Agent-Callable CLI Orchestration Engine
+// NanoMultica — Agent-Callable CLI Orchestration Engine
 //
 // Entry point: parses argv flags, routes to the IssueBoard state engine,
 // and exits with a standardized exit code:

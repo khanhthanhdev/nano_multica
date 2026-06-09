@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== Installing MicroMultica CLI ==="
+echo "=== Installing NanoMultica CLI ==="
 
 # 1. Clone the repo
 echo "[1/3] Cloning repository..."
@@ -40,4 +40,4 @@ fi
 cp "$TEMP_DIR/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
 chmod +x "$INSTALL_DIR/$BINARY_NAME"
 
-echo "MicroMultica installed successfully at $INSTALL_DIR/$BINARY_NAME"
+echo "NanoMultica installed successfully at $INSTALL_DIR/$BINARY_NAME"

@@ -42,7 +42,7 @@ int CommandRouter::parseIntArg(const std::string& s, const std::string& fieldNam
 void CommandRouter::printHelp() {
     std::cout <<
         "┌─────────────────────────────────────────────────────────────┐\n"
-        "│         MicroMultica CLI — Agent-Callable Orchestrator      │\n"
+        "│         NanoMultica CLI — Agent-Callable Orchestrator      │\n"
         "└─────────────────────────────────────────────────────────────┘\n"
         "\n"
         "Usage: ./multica <flag> [arguments]\n"

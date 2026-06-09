@@ -11,7 +11,7 @@ if [ ! -f "./multica" ]; then
     exit 1
 fi
 
-echo "=== Starting MicroMultica Workflow Integration Test ==="
+echo "=== Starting NanoMultica Workflow Integration Test ==="
 
 # Clean up any past test data files. 
 # In our implementation, we use "multica_issues.dat" and "multica_agents.dat" 

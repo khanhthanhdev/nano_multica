@@ -1,7 +1,7 @@
-# Product Requirements Document (PRD) — Simple Task Manager CLI (MicroMultica)
+# Product Requirements Document (PRD) — Simple Task Manager CLI (NanoMultica)
 
 ## 1. Project Overview & Scope
-**MicroMultica** is a headless, command-driven command-line interface (CLI) designed to serve as the execution and state-tracking layer for external AI coding agents. The system allows an agent to register itself, retrieve issues from a backlog, assign issues dynamically based on specialty matching and historic performance, simulate tasks, and log performance counters.
+**NanoMultica** is a headless, command-driven command-line interface (CLI) designed to serve as the execution and state-tracking layer for external AI coding agents. The system allows an agent to register itself, retrieve issues from a backlog, assign issues dynamically based on specialty matching and historic performance, simulate tasks, and log performance counters.
 
 The software is structured as a non-interactive console application. It loads state from disk, executes a single state-machine transition or query per invocation, outputs formatted JSON, and terminates with standard Unix exit codes. This allows for automated parsing and scripting.
 
@@ -10,7 +10,7 @@ The software is structured as a non-interactive console application. It loads st
 ## 2. Project Description and Architecture
 
 ### 2.1 Description
-MicroMultica acts as an issue tracker and orchestrator specifically tailored for AI agents. By executing command flags, external workflows can create issues, query the status of the board, list agents, or trigger lifecycle mutations. The CLI provides a deterministic framework to assess which agent is best suited for a task, runs the task simulation (which can succeed or fail depending on agent capability and task descriptions), and saves all changes back to a persistent flat-file database.
+NanoMultica acts as an issue tracker and orchestrator specifically tailored for AI agents. By executing command flags, external workflows can create issues, query the status of the board, list agents, or trigger lifecycle mutations. The CLI provides a deterministic framework to assess which agent is best suited for a task, runs the task simulation (which can succeed or fail depending on agent capability and task descriptions), and saves all changes back to a persistent flat-file database.
 
 ### 2.2 Core Algorithms
 

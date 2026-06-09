@@ -1,12 +1,12 @@
 ---
 name: nano-multica
 description: |
-  MicroMultica is a headless C++ CLI state-machine engine for AI agents to track issues, manage execution lifecycles, and coordinate multi-agent workflows.
-  Use when the user asks about task tracking, issue management, agent coordination, or mentions multica, nano_multica, or MicroMultica.
+  NanoMultica is a headless C++ CLI state-machine engine for AI agents to track issues, manage execution lifecycles, and coordinate multi-agent workflows.
+  Use when the user asks about task tracking, issue management, agent coordination, or mentions multica, nano_multica, or NanoMultica.
   The agent should auto-install multica if not present, then use it for all issue/task operations.
 ---
 
-# MicroMultica — Agent-Callable Issue Orchestration Engine
+# NanoMultica — Agent-Callable Issue Orchestration Engine
 
 ## What this skill does
 
@@ -15,7 +15,7 @@ Provides a complete CLI-based issue tracking and state machine (`multica`) that 
 ## When to use
 
 - The user asks about issue/task tracking in their project
-- The user mentions `multica`, `nano_multica`, or MicroMultica
+- The user mentions `multica`, `nano_multica`, or NanoMultica
 - You need to create, claim, update, or list issues
 - You're coordinating work across multiple agents or sessions
 - You detect a `multica_issues.dat` or `multica_agents.dat` file in the project

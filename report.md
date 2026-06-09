@@ -1,4 +1,4 @@
-# MicroMultica — Final Project Report
+# NanoMultica — Final Project Report
 
 Upon completing the project, our team has submitted this comprehensive technical report. The report logically documents our software development process and includes the following key sections:
 

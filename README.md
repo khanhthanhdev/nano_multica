@@ -1,4 +1,4 @@
-# MicroMultica — Agent-Callable CLI Orchestration Engine
+# NanoMultica — Agent-Callable CLI Orchestration Engine
 
 A headless C++ state-machine engine for managing AI agent issue execution lifecycles.
 
